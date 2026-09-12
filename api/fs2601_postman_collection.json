@@ -1,0 +1,100 @@
+﻿{
+  "info": {
+    "name": "FS-2601 Payment Authorization & Risk API",
+    "description": "Postman Collection for Hackathon Problem Statement FS-2601",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "accountId", "value": "ACC-BENCH-1" },
+    { "key": "merchantId", "value": "MERCHANT-POS-01" },
+    { "key": "terminalId", "value": "TERM-001" },
+    { "key": "offlineToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/health" }
+      }
+    },
+    {
+      "name": "2. Query Account Balance",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/account/{{accountId}}" }
+      }
+    },
+    {
+      "name": "3. Authorize Online Payment (Approved)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idempotency_key\": \"POSTMAN-ON-1\",\n  \"account_id\": \"{{accountId}}\",\n  \"merchant_id\": \"{{merchantId}}\",\n  \"terminal_id\": \"{{terminalId}}\",\n  \"amount\": 2500\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/auth/pay" }
+      }
+    },
+    {
+      "name": "4. Fraud: Tampered QR Sticker (Declined ISO 57)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"merchant_id\": \"{{merchantId}}\",\n  \"amount\": 2500,\n  \"qr_payload\": {\n    \"terminal_id\": \"{{terminalId}}\",\n    \"merchant_id\": \"{{merchantId}}\",\n    \"dynamic_nonce\": \"NONCE-TAMPERED\",\n    \"amount\": 2500,\n    \"signature\": \"INVALID_TAMPERED_HMAC_SIG\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/auth/pay" }
+      }
+    },
+    {
+      "name": "5. Issue Ed25519 Offline Token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"max_floor_amount\": 5000,\n  \"duration_sec\": 3600,\n  \"terminal_id\": \"{{terminalId}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/tokens/issue" }
+      }
+    },
+    {
+      "name": "6. Network Toggle -> DISCONNECTED",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"DISCONNECTED\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/network/toggle" }
+      }
+    },
+    {
+      "name": "7. Network Toggle -> RECONNECTED (Reconcile)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"RECONNECTED\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/network/toggle" }
+      }
+    },
+    {
+      "name": "8. Double-Entry Conservation Audit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/audit/conservation" }
+      }
+    }
+  ]
+}
