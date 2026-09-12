@@ -39,7 +39,10 @@ Commands:
   qr [tamper_mode]           Generate dynamic QR (NONE | EXPIRED | STICKER_MISMATCH | FORGED) (Feature 3)
   reconcile                  Trigger deterministic WAL replay and reconciliation (Feature 4)
   reserve                    Query deficit reserve balance (Feature 5)
-  audit                      Verify global double-entry conservation invariant`)
+  audit                      Verify global double-entry conservation invariant
+  create-account <id> <bal> [allowance]
+                             Register and fund a customer account
+  reset-fraud                Reset graph fraud engine in-memory state`)
 }
 
 func main() {
@@ -145,6 +148,25 @@ func main() {
 
 	case "audit":
 		doGet(baseURL + "/api/v1/audit/conservation")
+
+	case "create-account":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: fs2601-cli create-account <id> <balance_usd> [offline_allowance_usd]")
+			os.Exit(1)
+		}
+		balUSD, _ := strconv.ParseFloat(os.Args[3], 64)
+		var allowUSD float64 = 0
+		if len(os.Args) >= 5 {
+			allowUSD, _ = strconv.ParseFloat(os.Args[4], 64)
+		}
+		doPost(baseURL+"/api/v1/account/create", map[string]interface{}{
+			"account_id":        os.Args[2],
+			"balance":           int64(balUSD * 100),
+			"offline_allowance": int64(allowUSD * 100),
+		})
+
+	case "reset-fraud":
+		doPost(baseURL+"/api/v1/fraud/reset", nil)
 
 	default:
 		fmt.Printf("Unknown command: %s\n\n", cmd)

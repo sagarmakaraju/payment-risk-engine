@@ -28,6 +28,8 @@ print_info() {
 print_header "Phase 1: Checking Node Health & Initial State"
 HEALTH=$(curl -s "${BASE_URL}/api/v1/health" || { echo "Server not reachable on ${BASE_URL}"; exit 1; })
 print_success "Server online. Health payload: ${HEALTH}"
+curl -s -X POST "${BASE_URL}/api/v1/fraud/reset" > /dev/null || true
+print_success "Graph fraud engine initialized with fresh window state."
 
 # 2. Dual-Bucket Pre-Reservation Check (Feature 1)
 print_header "Phase 2: Feature 1 - Dual-Bucket Balance Pre-Reservation"

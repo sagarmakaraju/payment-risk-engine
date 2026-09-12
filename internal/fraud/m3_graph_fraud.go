@@ -371,3 +371,23 @@ func (g *InMemGraphFraudEngine) pruneExpiredEvents(now time.Time) {
 		}
 	}
 }
+
+// ClearAccountHistory clears graph activity for a specific account
+func (g *InMemGraphFraudEngine) ClearAccountHistory(accountID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.accountTransfers, accountID)
+	delete(g.accountDevices, accountID)
+	delete(g.accountIPs, accountID)
+}
+
+// Reset clears all in-memory graph state for clean testing runs
+func (g *InMemGraphFraudEngine) Reset() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.accountTransfers = make(map[string][]TransactionEvent)
+	g.accountDevices = make(map[string]map[string]time.Time)
+	g.accountIPs = make(map[string]map[string]time.Time)
+	g.lastPruneTime = time.Now()
+}
+

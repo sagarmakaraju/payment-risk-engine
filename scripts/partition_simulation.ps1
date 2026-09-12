@@ -40,6 +40,9 @@ Print-Header "Phase 1: Checking Node Health & Initial State"
 try {
     $health = Invoke-RestMethod -Uri "$baseUrl/api/v1/health"
     Print-Success "Server online. Network Status: $($health.network_status)"
+    # Reset fraud graph state to ensure clean run regardless of prior stress benchmarks
+    Invoke-RestMethod -Method Post -Uri "$baseUrl/api/v1/fraud/reset" | Out-Null
+    Print-Success "Graph fraud engine initialized with fresh window state."
 } catch {
     Write-Host "[ERROR] Server is not running on $baseUrl. Please start bin\server.exe first." -ForegroundColor Red
     exit 1

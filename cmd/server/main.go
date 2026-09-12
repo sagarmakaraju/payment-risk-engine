@@ -65,6 +65,8 @@ func main() {
 	mux.HandleFunc("GET /dashboard", srv.handleDashboard)
 	mux.HandleFunc("GET /api/v1/audit/conservation", srv.handleAuditConservation)
 	mux.HandleFunc("GET /audit/conservation", srv.handleAuditConservation)
+	mux.HandleFunc("POST /api/v1/fraud/reset", srv.handleResetFraud)
+	mux.HandleFunc("POST /api/v1/account/create", srv.handleCreateAccount)
 	mux.HandleFunc("GET /api/v1/health", srv.handleHealth)
 
 	log.Printf("FS-2601 Payment Authorization Server running on :%s ...", port)
@@ -379,3 +381,36 @@ func (s *Server) handleGenerateQR(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
 }
+
+func (s *Server) handleResetFraud(w http.ResponseWriter, r *http.Request) {
+	s.fraudEngine.Reset()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "RESET",
+		"message": "Graph fraud engine in-memory state reset.",
+	})
+}
+
+func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AccountID        string `json:"account_id"`
+		Balance          int64  `json:"balance"`
+		OfflineAllowance int64  `json:"offline_allowance"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request format"}`, http.StatusBadRequest)
+		return
+	}
+	if req.AccountID == "" {
+		http.Error(w, `{"error":"account_id is required"}`, http.StatusBadRequest)
+		return
+	}
+	acc := s.coreLedger.CreateAccount(req.AccountID, req.Balance)
+	if req.OfflineAllowance > 0 {
+		_ = s.coreLedger.AllocateOfflineAllowance(req.AccountID, req.OfflineAllowance)
+	}
+	s.fraudEngine.ClearAccountHistory(req.AccountID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(acc)
+}
+
