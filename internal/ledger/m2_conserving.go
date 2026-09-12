@@ -134,6 +134,35 @@ func (l *ConservingLedger) CreateAccount(id string, initialBalance int64) *Accou
 	return acc
 }
 
+// FundAccount deposits funds into an existing account (e.g. seeding the Deficit Reserve)
+func (l *ConservingLedger) FundAccount(id string, amount int64) error {
+	l.accountsLock.Lock()
+	acc, exists := l.accounts[id]
+	l.accountsLock.Unlock()
+
+	if !exists {
+		return ErrAccountNotFound
+	}
+
+	acc.mu.Lock()
+	acc.OnlineAvailable += amount
+	acc.AvailableBalance = acc.OnlineAvailable
+	acc.Version++
+	acc.UpdatedAt = time.Now().UTC()
+	acc.mu.Unlock()
+
+	l.appendEntry(LedgerEntry{
+		TxID:        fmt.Sprintf("FUND-%s-%d", id, time.Now().UnixNano()),
+		Type:        EntryCommit,
+		DebitAcc:    "SYSTEM_CAPITAL",
+		CreditAcc:   id,
+		Amount:      amount,
+		Timestamp:   time.Now().UTC(),
+		Description: fmt.Sprintf("Funded %d cents to %s", amount, id),
+	})
+	return nil
+}
+
 // GetAccount returns a thread-safe snapshot of the account
 func (l *ConservingLedger) GetAccount(id string) (AccountSnapshot, error) {
 	l.accountsLock.RLock()
