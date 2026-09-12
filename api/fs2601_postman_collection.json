@@ -134,6 +134,26 @@
         "header": [],
         "url": { "raw": "{{baseUrl}}/api/v1/audit/conservation" }
       }
+    },
+    {
+      "name": "13. Create & Fund Customer Account",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_id\": \"ACC-CUSTOM-01\",\n  \"balance\": 100000,\n  \"offline_allowance\": 20000\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/account/create" }
+      }
+    },
+    {
+      "name": "14. Reset Graph Fraud Engine State",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/fraud/reset" }
+      }
     }
   ]
 }
