@@ -1,6 +1,6 @@
 # FS-2601 System Evaluation & Benchmark Verification Report
 
-- **Generated**: 2026-09-12 10:20:05 UTC
+- **Generated**: 2026-09-12 10:53:40 UTC
 - **Go Version**: go version go1.27.0 windows/amd64
 - **Platform**: Microsoft Windows NT 10.0.26200.0 (16 Logical Cores)
 - **Constraint Compliance**: Zero CGO, \$\le 512\text{ MB RAM}\$, Sub-Millisecond CPU Authorization
@@ -12,7 +12,7 @@
 ```text
 === RUN   TestConcurrencyAndZeroDoubleSpend
     m8_benchmark_test.go:154: === 500 Concurrent Goroutines Latency Metrics ===
-    m8_benchmark_test.go:155: p50: 1.0383ms | p90: 1.5731ms | p99: 2.0851ms
+    m8_benchmark_test.go:155: p50: 1.0571ms | p90: 1.5799ms | p99: 2.1002ms
 --- PASS: TestConcurrencyAndZeroDoubleSpend (0.01s)
 === RUN   TestNetworkPartitionAndDeterministicReconciliation
     m8_benchmark_test.go:264: Reconciliation Report: Processed=50, Success=50, Deficit=0, AmountReconciled=50000
@@ -38,7 +38,7 @@
 === RUN   TestUnitHelpers_CoverageExpansion
 --- PASS: TestUnitHelpers_CoverageExpansion (0.00s)
 PASS
-ok  	fs2601/tests	1.152s
+ok  	fs2601/tests	1.019s
 ```
 
 ---
@@ -50,13 +50,13 @@ goos: windows
 goarch: amd64
 pkg: fs2601/tests
 cpu: Intel(R) Core(TM) 7 240H
-BenchmarkInlineAuthorization-16               	 3253378	       358.1 ns/op	      88 B/op	       2 allocs/op
-BenchmarkFeature1_DualBucketCommit-16         	 2820579	       420.4 ns/op	     737 B/op	       4 allocs/op
-BenchmarkFeature2_CompactFilterContains-16    	81588250	        15.16 ns/op	       0 B/op	       0 allocs/op
-BenchmarkFeature3_DynamicQRVerification-16    	   37492	     31733 ns/op	     248 B/op	       8 allocs/op
-BenchmarkFeature4_VectorClockSorting-16       	    7647	    161461 ns/op	   18680 B/op	       4 allocs/op
+BenchmarkInlineAuthorization-16               	 3343759	       337.5 ns/op	      88 B/op	       2 allocs/op
+BenchmarkFeature1_DualBucketCommit-16         	 2497004	       434.2 ns/op	     816 B/op	       4 allocs/op
+BenchmarkFeature2_CompactFilterContains-16    	85011121	        15.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFeature3_DynamicQRVerification-16    	   34202	     31408 ns/op	     248 B/op	       8 allocs/op
+BenchmarkFeature4_VectorClockSorting-16       	    7802	    163878 ns/op	   18680 B/op	       4 allocs/op
 PASS
-ok  	fs2601/tests	8.348s
+ok  	fs2601/tests	8.161s
 ```
 
 ---
