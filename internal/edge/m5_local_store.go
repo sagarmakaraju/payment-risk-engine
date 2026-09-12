@@ -1,4 +1,4 @@
-﻿package edge
+package edge
 
 import (
 	"crypto/sha256"
