@@ -23,6 +23,33 @@ Built in pure Go with zero CGO dependencies, sub-millisecond CPU authorization, 
 
 ---
 
+## Live Access & Quick Links
+
+- **Public HTTPS Dashboard (Global Access):** [https://positions-him-expenditures-boards.trycloudflare.com/dashboard](https://positions-him-expenditures-boards.trycloudflare.com/dashboard)
+- **Local Dashboard:** [http://localhost:8081/dashboard](http://localhost:8081/dashboard)
+- **Judge Presentation & Demo Script:** [DEMO_PRESENTATION_GUIDE.md](DEMO_PRESENTATION_GUIDE.md)
+- **Automated Evaluation Report:** [EVALUATION_REPORT.md](EVALUATION_REPORT.md)
+- **Complete Submission ZIP:** [FS2601_COMPLETE_PACKAGE.zip](FS2601_COMPLETE_PACKAGE.zip)
+
+---
+
+## 30-Second Quickstart (Zero Setup)
+
+Run the self-contained all-in-one runner without building or configuring any databases:
+
+```powershell
+# 1. Run all 4 verification gates in terminal
+go run fs2601_all_in_one.go --test
+
+# 2. Run nanosecond CPU & memory microbenchmarks
+go run fs2601_all_in_one.go --bench
+
+# 3. Start interactive HTTP server & dashboard on port 8081
+go run fs2601_all_in_one.go -port 8081
+```
+
+---
+
 ## Architecture Overview
 
 ```mermaid
