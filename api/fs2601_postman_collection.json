@@ -1,19 +1,18 @@
-﻿{
+{
   "info": {
-    "name": "FS-2601 Payment Authorization & Risk API",
-    "description": "Postman Collection for Hackathon Problem Statement FS-2601",
+    "name": "FS-2601 Payment Authorization & Risk API v2.0",
+    "description": "Comprehensive Postman Collection covering all core modules M1-M7 and production features F1-F5",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "accountId", "value": "ACC-BENCH-1" },
     { "key": "merchantId", "value": "MERCHANT-POS-01" },
-    { "key": "terminalId", "value": "TERM-001" },
-    { "key": "offlineToken", "value": "" }
+    { "key": "terminalId", "value": "TERM-001" }
   ],
   "item": [
     {
-      "name": "1. Health Check",
+      "name": "01. Health Check",
       "request": {
         "method": "GET",
         "header": [],
@@ -21,7 +20,7 @@
       }
     },
     {
-      "name": "2. Query Account Balance",
+      "name": "02. Query Account Balance (Dual-Bucket)",
       "request": {
         "method": "GET",
         "header": [],
@@ -29,31 +28,63 @@
       }
     },
     {
-      "name": "3. Authorize Online Payment (Approved)",
+      "name": "03. Feature 1: Pre-Allocate Offline Allowance",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"idempotency_key\": \"POSTMAN-ON-1\",\n  \"account_id\": \"{{accountId}}\",\n  \"merchant_id\": \"{{merchantId}}\",\n  \"terminal_id\": \"{{terminalId}}\",\n  \"amount\": 2500\n}"
+          "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"amount\": 15000\n}"
         },
-        "url": { "raw": "{{baseUrl}}/api/v1/auth/pay" }
+        "url": { "raw": "{{baseUrl}}/api/v1/ledger/allowance/allocate" }
       }
     },
     {
-      "name": "4. Fraud: Tampered QR Sticker (Declined ISO 57)",
+      "name": "04. Feature 3: Generate Dynamic QR (Genuine)",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"merchant_id\": \"{{merchantId}}\",\n  \"amount\": 2500,\n  \"qr_payload\": {\n    \"terminal_id\": \"{{terminalId}}\",\n    \"merchant_id\": \"{{merchantId}}\",\n    \"dynamic_nonce\": \"NONCE-TAMPERED\",\n    \"amount\": 2500,\n    \"signature\": \"INVALID_TAMPERED_HMAC_SIG\"\n  }\n}"
+          "raw": "{\n  \"merchant_id\": \"{{merchantId}}\",\n  \"terminal_id\": \"{{terminalId}}\",\n  \"tamper_mode\": \"NONE\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/qr/generate" }
+      }
+    },
+    {
+      "name": "05. Feature 3: Defeat Physical QR Sticker Attack (ISO 59)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"merchant_id\": \"{{merchantId}}\",\n  \"amount\": 2500,\n  \"dynamic_qr\": {\n    \"merchant_id\": \"ATTACKER-EVIL-MERCHANT\",\n    \"terminal_id\": \"{{terminalId}}\",\n    \"epoch_salt\": 1789200000,\n    \"nonce\": \"attackernonce\",\n    \"signature\": \"validsigforattackermerchant\"\n  }\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/v1/auth/pay" }
       }
     },
     {
-      "name": "5. Issue Ed25519 Offline Token",
+      "name": "06. Feature 2: Compact Cuckoo Revocation Stats",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/revocation/stats" }
+      }
+    },
+    {
+      "name": "07. Feature 2: Revoke Account in Cuckoo Filter",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_id\": \"ACC-REVOKED-POSTMAN\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/v1/revocation/add" }
+      }
+    },
+    {
+      "name": "08. Issue Ed25519 Offline Token",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -65,7 +96,7 @@
       }
     },
     {
-      "name": "6. Network Toggle -> DISCONNECTED",
+      "name": "09. Network Partition Cut (DISCONNECTED)",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -77,7 +108,7 @@
       }
     },
     {
-      "name": "7. Network Toggle -> RECONNECTED (Reconcile)",
+      "name": "10. Reconnect & Deterministic Replay (RECONNECTED)",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -89,7 +120,15 @@
       }
     },
     {
-      "name": "8. Double-Entry Conservation Audit",
+      "name": "11. Feature 5: Query Deficit Reserve Balance",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/v1/ledger/reserve" }
+      }
+    },
+    {
+      "name": "12. Audit Global Double-Entry Conservation",
       "request": {
         "method": "GET",
         "header": [],

@@ -1,8 +1,8 @@
-﻿openapi: 3.0.3
+openapi: 3.0.3
 info:
   title: FS-2601 Payment Authorization & Inline Fraud Screening API
-  description: Reference implementation for partition-tolerant payment authorizations with inline graph fraud screening and conserving ledger.
-  version: 1.0.0
+  description: Reference implementation for partition-tolerant payment authorizations with inline graph fraud screening, dual-bucket conserving ledger, compact Cuckoo revocation, dynamic QR handshake with rotating epoch salts, and automated deficit reserve allocation.
+  version: 2.0.0
 servers:
   - url: http://localhost:8080
     description: Local reference server
@@ -60,9 +60,28 @@ paths:
         '200':
           description: Reconciliation report
 
+  /api/v1/reconcile/toggle-reserve:
+    post:
+      summary: Toggle whether reconciliation charges shortfalls to ACC_MERCHANT_DEFICIT_RESERVE (Feature 5)
+      operationId: toggleDeficitReserve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Reserve mode updated
+
   /api/v1/account/{id}:
     get:
-      summary: Query account balance snapshot
+      summary: Query account balance snapshot (Online, Offline Allowance, Reserved)
       operationId: getAccount
       parameters:
         - name: id
@@ -73,6 +92,10 @@ paths:
       responses:
         '200':
           description: Account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSnapshot'
 
   /api/v1/tokens/issue:
     post:
@@ -99,6 +122,86 @@ paths:
       responses:
         '200':
           description: Token issued
+
+  /api/v1/ledger/allowance/allocate:
+    post:
+      summary: Pre-allocate offline spending quota from OnlineAvailable to OfflineAllowance (Feature 1)
+      operationId: allocateAllowance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - amount
+              properties:
+                account_id:
+                  type: string
+                amount:
+                  type: integer
+                  description: Amount in cents to pre-reserve
+      responses:
+        '200':
+          description: Allowance allocated
+
+  /api/v1/ledger/reserve:
+    get:
+      summary: Query snapshot of ACC_MERCHANT_DEFICIT_RESERVE (Feature 5)
+      operationId: getDeficitReserve
+      responses:
+        '200':
+          description: Deficit reserve account details
+
+  /api/v1/qr/generate:
+    post:
+      summary: Generate an asymmetric dynamic QR payload signed with Ed25519 and rotating 30s epoch salt (Feature 3)
+      operationId: generateDynamicQR
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merchant_id:
+                  type: string
+                terminal_id:
+                  type: string
+                tamper_mode:
+                  type: string
+                  enum: [NONE, EXPIRED, STICKER_MISMATCH, FORGED]
+      responses:
+        '200':
+          description: Dynamic QR payload generated
+
+  /api/v1/revocation/add:
+    post:
+      summary: Insert account or card ID into the edge Compact Cuckoo Filter (Feature 2)
+      operationId: addRevocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+              properties:
+                account_id:
+                  type: string
+      responses:
+        '200':
+          description: Account revoked
+
+  /api/v1/revocation/stats:
+    get:
+      summary: Query Compact Cuckoo Filter memory usage, capacity, and lookup latency (Feature 2)
+      operationId: getRevocationStats
+      responses:
+        '200':
+          description: Filter statistics
 
   /api/v1/audit/conservation:
     get:
@@ -146,8 +249,60 @@ components:
           type: integer
         qr_payload:
           type: object
+        dynamic_qr:
+          $ref: '#/components/schemas/DynamicQRPayload'
         offline_token:
           type: object
+        vector_clock:
+          type: object
+          additionalProperties:
+            type: integer
+        seq_no:
+          type: integer
+
+    DynamicQRPayload:
+      type: object
+      required:
+        - merchant_id
+        - terminal_id
+        - epoch_salt
+        - nonce
+        - signature
+      properties:
+        merchant_id:
+          type: string
+        terminal_id:
+          type: string
+        epoch_salt:
+          type: integer
+          description: Unix timestamp rounded to 30s
+        nonce:
+          type: string
+        signature:
+          type: string
+          description: Hex-encoded Ed25519 signature
+
+    AccountSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        online_available:
+          type: integer
+          description: Cents available for online authorization
+        offline_allowance:
+          type: integer
+          description: Cents pre-reserved for offline allowance
+        reserved_balance:
+          type: integer
+          description: Cents in-flight in online holds
+        total_balance:
+          type: integer
+          description: Conserved total cents across all buckets
+        version:
+          type: integer
+        updated_at:
+          type: string
 
     PaymentResponse:
       type: object
@@ -162,7 +317,18 @@ components:
           enum: [APPROVED, DECLINED, OFFLINE_AUTHORIZED]
         reason_code:
           type: string
-          enum: [APPROVED, INSUFFICIENT_FUNDS, QR_MISMATCH, MULE_RING_DETECTED, FLOOR_LIMIT_EXCEEDED, OFFLINE_TOKEN_INVALID, DUPLICATE_TRANSACTION, SETTLEMENT_DEFICIT]
+          enum: [
+            APPROVED, 
+            ERR_REVOKED_ACCOUNT_EDGE,
+            INSUFFICIENT_FUNDS, 
+            QR_MISMATCH, 
+            ERR_QR_TAMPERING,
+            MULE_RING_DETECTED, 
+            FLOOR_LIMIT_EXCEEDED, 
+            OFFLINE_TOKEN_INVALID, 
+            DUPLICATE_TRANSACTION, 
+            RECON_DEFICIT_CHARGED_TO_RESERVE
+          ]
         iso8583:
           type: string
           example: "00"
