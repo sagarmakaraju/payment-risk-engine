@@ -1,4 +1,4 @@
-﻿# Binaries
+# Binaries
 bin/
 *.exe
 
@@ -9,6 +9,7 @@ wal_edge_data.log
 # Temporary
 tmp/
 temp_*.json
+coverage*
 
 # OS files
 .DS_Store
