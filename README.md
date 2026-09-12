@@ -173,3 +173,30 @@ The script automatically executes and verifies:
 9. **Phase 9**: Offline Ed25519 token authorization and floor limit enforcement.
 10. **Phase 10**: Network reconnection and deterministic vector clock reconciliation replay.
 11. **Phase 11**: Automated deficit reserve liability allocation and global conservation audit ($0 double-spends).
+
+---
+
+## Developer & Judge CLI Tool (`fs2601-cli`)
+
+A fast terminal CLI tool is included in `cmd/cli/main.go` and built to `bin/fs2601-cli.exe` via `make cli`:
+
+```powershell
+# Build CLI
+go build -o bin\fs2601-cli.exe ./cmd/cli
+
+# Run commands against running server
+.\bin\fs2601-cli.exe health
+.\bin\fs2601-cli.exe audit
+.\bin\fs2601-cli.exe balance ACC-BENCH-1
+.\bin\fs2601-cli.exe pay ACC-BENCH-1 MERCHANT-POS-01 15.00
+.\bin\fs2601-cli.exe cuckoo-stats
+.\bin\fs2601-cli.exe qr NONE
+.\bin\fs2601-cli.exe qr EXPIRED
+.\bin\fs2601-cli.exe qr STICKER_MISMATCH
+.\bin\fs2601-cli.exe network DISCONNECTED
+.\bin\fs2601-cli.exe token ACC-BENCH-1 50
+.\bin\fs2601-cli.exe network RECONNECTED
+.\bin\fs2601-cli.exe reconcile
+.\bin\fs2601-cli.exe reserve
+```
+
