@@ -1,0 +1,15 @@
+﻿# Binaries
+bin/
+*.exe
+
+# Storage & Logs
+*.log
+wal_edge_data.log
+
+# Temporary
+tmp/
+temp_*.json
+
+# OS files
+.DS_Store
+Thumbs.db

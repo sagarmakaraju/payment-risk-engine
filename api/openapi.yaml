@@ -1,0 +1,178 @@
+﻿openapi: 3.0.3
+info:
+  title: FS-2601 Payment Authorization & Inline Fraud Screening API
+  description: Reference implementation for partition-tolerant payment authorizations with inline graph fraud screening and conserving ledger.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local reference server
+
+paths:
+  /api/v1/auth/pay:
+    post:
+      summary: Authorize payment with inline fraud screening
+      operationId: processPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Authorization Approved (Online or Offline)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '402':
+          description: Authorization Declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+
+  /api/v1/network/toggle:
+    post:
+      summary: Simulate network partition health status
+      operationId: toggleNetwork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [ONLINE, DISCONNECTED, RECONNECTED]
+      responses:
+        '200':
+          description: Status updated
+
+  /api/v1/reconcile:
+    post:
+      summary: Deterministically replay and reconcile queued offline transactions
+      operationId: triggerReconciliation
+      responses:
+        '200':
+          description: Reconciliation report
+
+  /api/v1/account/{id}:
+    get:
+      summary: Query account balance snapshot
+      operationId: getAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account details
+
+  /api/v1/tokens/issue:
+    post:
+      summary: Issue cryptographic Ed25519 offline token
+      operationId: issueToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - max_floor_amount
+              properties:
+                account_id:
+                  type: string
+                max_floor_amount:
+                  type: integer
+                duration_sec:
+                  type: integer
+                terminal_id:
+                  type: string
+      responses:
+        '200':
+          description: Token issued
+
+  /api/v1/audit/conservation:
+    get:
+      summary: System-wide double-entry ledger conservation audit
+      operationId: auditConservation
+      responses:
+        '200':
+          description: Conservation audit data
+
+  /api/v1/health:
+    get:
+      summary: Health check & node state
+      operationId: getHealth
+      responses:
+        '200':
+          description: Node is UP
+
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required:
+        - account_id
+        - merchant_id
+        - amount
+      properties:
+        idempotency_key:
+          type: string
+        tx_id:
+          type: string
+        account_id:
+          type: string
+        merchant_id:
+          type: string
+        terminal_id:
+          type: string
+        amount:
+          type: integer
+          description: Amount in cents
+        device_id:
+          type: string
+        ip_address:
+          type: string
+        client_timestamp:
+          type: integer
+        qr_payload:
+          type: object
+        offline_token:
+          type: object
+
+    PaymentResponse:
+      type: object
+      required:
+        - status
+        - reason_code
+        - iso8583
+        - message
+      properties:
+        status:
+          type: string
+          enum: [APPROVED, DECLINED, OFFLINE_AUTHORIZED]
+        reason_code:
+          type: string
+          enum: [APPROVED, INSUFFICIENT_FUNDS, QR_MISMATCH, MULE_RING_DETECTED, FLOOR_LIMIT_EXCEEDED, OFFLINE_TOKEN_INVALID, DUPLICATE_TRANSACTION, SETTLEMENT_DEFICIT]
+        iso8583:
+          type: string
+          example: "00"
+        message:
+          type: string
+        tx_id:
+          type: string
+        amount:
+          type: integer
+        fraud_score:
+          type: number
+        is_offline:
+          type: boolean

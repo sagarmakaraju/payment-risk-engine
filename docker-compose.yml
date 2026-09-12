@@ -1,0 +1,24 @@
+﻿version: '3.8'
+
+services:
+  payment-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fs2601-payment-server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    volumes:
+      - wal-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  wal-data:
+    driver: local
