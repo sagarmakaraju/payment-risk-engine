@@ -1,9 +1,11 @@
 # Hackathon Judge Evaluation & Live Demonstration Guide (FS-2601)
 
-This guide provides three structured paths to evaluate the reference implementation for **FS-2601: Partition-Tolerant Payment Authorization with Inline Fraud Screening**:
+This guide provides five structured paths to evaluate the reference implementation for **FS-2601: Partition-Tolerant Payment Authorization with Inline Fraud Screening**:
 1. **Option A: 60-Second Automated Test Suite & Benchmarks** (Pure Go, 9 tests + 5 benchmarks)
 2. **Option B: 3-Minute Live 11-Phase Chaos Partition Simulation** (Automated script against running binary)
-3. **Option C: 5-Minute Interactive Web Console & Visual Audit** (`http://localhost:8080/dashboard`)
+3. **Option C: 5-Minute Interactive Web Console & Visual Audit** (`http://localhost:8080/dashboard` or `http://localhost:8081/dashboard`)
+4. **Option D: Terminal CLI Evaluation** (`.\bin\fs2601-cli.exe`)
+5. **Option E: Instant Zero-Install Global Cloud Evaluation** (`https://positions-him-expenditures-boards.trycloudflare.com/dashboard`)
 
 ---
 
@@ -49,13 +51,13 @@ go test -bench="." -benchmem ./tests/...
   - Offline overdraw reconciled without negative customer balance ($B_{\text{cust}} = \$0.00$).
   - Merchant receives full settlement; shortfall delta debited from `ACC_MERCHANT_DEFICIT_RESERVE` with alert `RECON_DEFICIT_CHARGED_TO_RESERVE` (ISO `96`).
 
-### Benchmark Metrics
+### Benchmark Metrics (Verified on Intel Core 7)
 ```text
-BenchmarkInlineAuthorization-16             2,694,747    421.0 ns/op      88 B/op    2 allocs/op
-BenchmarkFeature1_DualBucketCommit-16       2,279,080    483.8 ns/op     730 B/op    4 allocs/op
-BenchmarkFeature2_CompactFilterContains-16 73,745,406     15.48 ns/op      0 B/op    0 allocs/op
-BenchmarkFeature3_DynamicQRVerification-16     36,444  32,281 ns/op      248 B/op    8 allocs/op
-BenchmarkFeature4_VectorClockSorting-16         8,364 147,385 ns/op   18,680 B/op    4 allocs/op
+BenchmarkInlineAuthorization-16             3,221,262    362.5 ns/op      88 B/op    2 allocs/op
+BenchmarkFeature1_DualBucketCommit-16       2,510,725    477.0 ns/op     812 B/op    4 allocs/op
+BenchmarkFeature2_CompactFilterContains-16 74,626,864     15.17 ns/op      0 B/op    0 allocs/op
+BenchmarkFeature3_DynamicQRVerification-16     39,447  31,185 ns/op      248 B/op    8 allocs/op
+BenchmarkFeature4_VectorClockSorting-16         7,338 159,108 ns/op   18,680 B/op    4 allocs/op
 ```
 
 ---
@@ -140,3 +142,25 @@ go build -o bin\fs2601-cli.exe ./cmd/cli
 # 7. Query deficit reserve balance
 .\bin\fs2601-cli.exe reserve
 ```
+
+---
+
+## Option E: Instant Zero-Install Global Cloud Evaluation
+
+For evaluators or judges evaluating remotely without local Go installations:
+
+1. Open the public HTTPS endpoint:
+   ```text
+   https://positions-him-expenditures-boards.trycloudflare.com/dashboard
+   ```
+2. Interactive test cases:
+   - **Online Auth:** Account: `ACC-BENCH-1` | Amount: `15.00` &rarr; Click **Authorize Payment** &rarr; `APPROVED` (ISO `00`).
+   - **Revocation Filter:** Account: `ACC-REVOKED-DEMO` | Amount: `10.00` &rarr; Click **Authorize Payment** &rarr; `DECLINED` (ISO `41`).
+   - **Partition Cut:** Click **`DISCONNECT`** &rarr; Amount: `25.00` &rarr; `OFFLINE_AUTHORIZED`.
+   - **Reconciliation:** Click **`RECONNECT`** &rarr; Replays WAL and settles via Vector Clock topological ordering.
+3. Open the public conservation audit endpoint:
+   ```text
+   https://positions-him-expenditures-boards.trycloudflare.com/api/v1/audit/conservation
+   ```
+   Confirms 100% strict mathematical conservation ($\sum \text{Debits} = \sum \text{Credits}$).
+
