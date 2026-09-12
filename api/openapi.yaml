@@ -211,6 +211,44 @@ paths:
         '200':
           description: Conservation audit data
 
+  /api/v1/fraud/reset:
+    post:
+      summary: Reset in-memory graph fraud engine sliding window state
+      operationId: resetFraudEngine
+      responses:
+        '200':
+          description: Fraud engine state reset successfully
+
+  /api/v1/account/create:
+    post:
+      summary: Dynamically register and fund a new customer account
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - balance
+              properties:
+                account_id:
+                  type: string
+                balance:
+                  type: integer
+                  description: Initial balance in cents
+                offline_allowance:
+                  type: integer
+                  description: Pre-allocated offline allowance in cents
+      responses:
+        '200':
+          description: Account created snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSnapshot'
+
   /api/v1/health:
     get:
       summary: Health check & node state
