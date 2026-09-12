@@ -1,9 +1,13 @@
-.PHONY: all build test bench run clean sim
+.PHONY: all build cli test bench run clean sim
 
-all: build test
+all: build cli test
 
 build:
 	go build -o bin/server.exe ./cmd/server
+
+cli:
+	go build -o bin/fs2601-cli.exe ./cmd/cli
+
 
 test:
 	go test -v -count=1 ./tests/...
