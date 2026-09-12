@@ -40,14 +40,15 @@ jobs:
         run: |
           go test -bench="." -benchmem ./tests/...
 
-      - name: Build Standalone Server Binary
+      - name: Build Standalone Server & CLI Binaries
         run: |
           mkdir -p bin
           CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/server ./cmd/server
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/fs2601-cli ./cmd/cli
 
       - name: Start Background Server & Execute 11-Phase Chaos Simulation
         run: |
-          chmod +x bin/server scripts/partition_simulation.sh
+          chmod +x bin/server bin/fs2601-cli scripts/partition_simulation.sh
           ./bin/server &
           SERVER_PID=$!
           sleep 2
@@ -55,7 +56,14 @@ jobs:
           # Run automated 11-phase chaos simulation
           bash ./scripts/partition_simulation.sh
 
+          # Verify CLI commands against live server
+          ./bin/fs2601-cli health
+          ./bin/fs2601-cli audit
+          ./bin/fs2601-cli cuckoo-stats
+          ./bin/fs2601-cli reserve
+
           # Run 500-concurrency Python benchmark
           python ./scripts/benchmark_concurrency.py
 
           kill $SERVER_PID
+
