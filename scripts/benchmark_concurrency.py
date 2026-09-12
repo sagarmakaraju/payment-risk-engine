@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 FS-2601 Concurrency & Double-Spend Benchmark Client
 Spawns 500 concurrent workers attempting to deplete an account with $1,000 balance.
@@ -104,10 +104,13 @@ async def run_benchmark():
     print(f"p90 Latency           : {p90:.2f} ms")
     print(f"p99 Latency           : {p99:.2f} ms (Target <= 300 ms)")
 
+    from collections import Counter
+    reasons = Counter(r.get("reason_code", "UNKNOWN") for r in responses if r.get("status") == "DECLINED")
+
     print(f"\n--- Financial Correctness & Double-Spend Assertion ---")
     print(f"Approved Transactions : {approved} (Total = ${approved * (TRANSFER_AMOUNT_CENTS/100):.2f})")
-    print(f"Declined (Funds)      : {declined_insufficient}")
-    print(f"Other Declines        : {declined_other}")
+    for reason, count in reasons.items():
+        print(f"Declined ({reason:<22}): {count}")
 
     # Check final balance
     with urllib.request.urlopen(urllib.request.Request(acc_url)) as resp:

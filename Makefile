@@ -1,4 +1,4 @@
-﻿.PHONY: all build test bench run clean sim
+.PHONY: all build test bench run clean sim
 
 all: build test
 
@@ -6,10 +6,10 @@ build:
 	go build -o bin/server.exe ./cmd/server
 
 test:
-	go test -v -count=1 ./tests
+	go test -v -count=1 ./tests/...
 
 bench:
-	go test -bench='.' -benchmem ./tests
+	go test -bench='.' -benchmem ./tests/...
 
 run: build
 	./bin/server.exe
