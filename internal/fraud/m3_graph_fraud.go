@@ -1,6 +1,7 @@
 package fraud
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -49,9 +50,10 @@ type FraudDecision struct {
 
 // InMemGraphFraudEngine maintains a directional entity graph and evaluates risk inline
 type InMemGraphFraudEngine struct {
-	mu             sync.RWMutex
-	secretKey      []byte
+	mu              sync.RWMutex
+	secretKey       []byte
 	terminalToMerch map[string]string // TerminalID -> MerchantID mapping
+	terminalPubKeys map[string]ed25519.PublicKey // TerminalID -> Ed25519 public key
 
 	// Entity relationships
 	accountTransfers map[string][]TransactionEvent // FromAcc -> outgoing events
@@ -69,6 +71,7 @@ func NewInMemGraphFraudEngine(secretKey string) *InMemGraphFraudEngine {
 	return &InMemGraphFraudEngine{
 		secretKey:               []byte(secretKey),
 		terminalToMerch:         make(map[string]string),
+		terminalPubKeys:         make(map[string]ed25519.PublicKey),
 		accountTransfers:        make(map[string][]TransactionEvent),
 		accountDevices:          make(map[string]map[string]time.Time),
 		accountIPs:              make(map[string]map[string]time.Time),
@@ -91,6 +94,33 @@ func (g *InMemGraphFraudEngine) RegisterTerminal(terminalID, merchantID string) 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.terminalToMerch[terminalID] = merchantID
+}
+
+// RegisterTerminalPubKey registers an Ed25519 public key for a POS terminal
+func (g *InMemGraphFraudEngine) RegisterTerminalPubKey(terminalID string, pubKey ed25519.PublicKey) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.terminalPubKeys == nil {
+		g.terminalPubKeys = make(map[string]ed25519.PublicKey)
+	}
+	g.terminalPubKeys[terminalID] = pubKey
+}
+
+// VerifyDynamicQRPayload validates dynamic QR against registered public keys and epoch rules
+func (g *InMemGraphFraudEngine) VerifyDynamicQRPayload(qr *DynamicQRPayload, expectedMerchantID string) (bool, string) {
+	if qr == nil {
+		return true, ""
+	}
+	if expectedMerchantID != "" && qr.MerchantID != expectedMerchantID {
+		return false, fmt.Sprintf("Merchant ID mismatch: expected %s, got %s", expectedMerchantID, qr.MerchantID)
+	}
+	g.mu.RLock()
+	pubKey, exists := g.terminalPubKeys[qr.TerminalID]
+	g.mu.RUnlock()
+	if !exists {
+		return false, fmt.Sprintf("Terminal %s is not registered with an Ed25519 public key", qr.TerminalID)
+	}
+	return VerifyDynamicQR(*qr, pubKey)
 }
 
 // GenerateQRSignature creates a reference dynamic QR HMAC signature for genuine terminals

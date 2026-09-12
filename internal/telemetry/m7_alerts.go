@@ -14,6 +14,9 @@ const (
 	CodeOfflineTokenInvalid  ReasonCode = "OFFLINE_TOKEN_INVALID"
 	CodeDuplicateTransaction ReasonCode = "DUPLICATE_TRANSACTION"
 	CodeSettlementDeficit    ReasonCode = "SETTLEMENT_DEFICIT"
+	CodeRevokedAccountEdge   ReasonCode = "ERR_REVOKED_ACCOUNT_EDGE"
+	CodeQRTampering          ReasonCode = "ERR_QR_TAMPERING"
+	CodeReconDeficitChargedToReserve ReasonCode = "RECON_DEFICIT_CHARGED_TO_RESERVE"
 	CodeSystemError          ReasonCode = "SYSTEM_ERROR"
 )
 
@@ -26,16 +29,20 @@ func MapReasonToISO8583(code ReasonCode) string {
 		return "51" // Insufficient funds
 	case CodeQRMismatch:
 		return "57" // Transaction not permitted / QR tamper
+	case CodeQRTampering:
+		return "59" // Suspected fraud / Dynamic QR tampering
 	case CodeMuleRingDetected:
 		return "59" // Suspected fraud / Mule ring
 	case CodeFloorLimitExceeded:
 		return "61" // Exceeds withdrawal amount limit / Floor ceiling
 	case CodeOfflineTokenInvalid:
 		return "63" // Security violation / Token expired or signature invalid
+	case CodeRevokedAccountEdge:
+		return "41" // Lost/Stolen card / Revoked account at edge
 	case CodeDuplicateTransaction:
 		return "94" // Duplicate transmission
-	case CodeSettlementDeficit:
-		return "96" // System error / Deficit recorded
+	case CodeSettlementDeficit, CodeReconDeficitChargedToReserve:
+		return "96" // System error / Deficit recorded or charged to reserve
 	default:
 		return "05" // Do not honor / General decline
 	}

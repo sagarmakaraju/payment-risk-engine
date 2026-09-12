@@ -22,23 +22,25 @@ var (
 
 // QueuedTransaction represents an edge-persisted transaction awaiting reconciliation
 type QueuedTransaction struct {
-	TxID            string `json:"tx_id"`
-	ClientTimestamp int64  `json:"client_timestamp"`
-	SequenceNum     int64  `json:"sequence_num"`
-	TokenID         string `json:"token_id"`
-	AccountID       string `json:"account_id"`
-	MerchantID      string `json:"merchant_id"`
-	TerminalID      string `json:"terminal_id"`
-	Amount          int64  `json:"amount"` // in cents
-	Signature       string `json:"signature"`
-	Status          string `json:"status"` // PENDING, RECONCILED, DEFICIT
-	PayloadHash     string `json:"payload_hash"`
+	TxID            string            `json:"tx_id"`
+	ClientTimestamp int64             `json:"client_timestamp"`
+	SequenceNum     int64             `json:"sequence_num"`
+	SeqNo           uint64            `json:"seq_no,omitempty"`           // Feature 4: Monotonic terminal sequence
+	VectorClock     map[string]uint64 `json:"vector_clock,omitempty"`    // Feature 4: Multi-terminal vector clock
+	TokenID         string            `json:"token_id"`
+	AccountID       string            `json:"account_id"`
+	MerchantID      string            `json:"merchant_id"`
+	TerminalID      string            `json:"terminal_id"`
+	Amount          int64             `json:"amount"` // in cents
+	Signature       string            `json:"signature"`
+	Status          string            `json:"status"` // PENDING, RECONCILED, DEFICIT
+	PayloadHash     string            `json:"payload_hash"`
 }
 
 // ComputeHash computes the SHA-256 deduplication hash for the transaction
 func (tx *QueuedTransaction) ComputeHash() string {
-	raw := fmt.Sprintf("%s:%d:%d:%s:%s:%s:%d",
-		tx.TxID, tx.ClientTimestamp, tx.SequenceNum, tx.TokenID, tx.AccountID, tx.MerchantID, tx.Amount)
+	raw := fmt.Sprintf("%s:%d:%d:%d:%s:%s:%s:%d",
+		tx.TxID, tx.ClientTimestamp, tx.SequenceNum, tx.SeqNo, tx.TokenID, tx.AccountID, tx.MerchantID, tx.Amount)
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
 }

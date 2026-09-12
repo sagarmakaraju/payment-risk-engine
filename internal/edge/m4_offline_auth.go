@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"fs2601/internal/fraud"
 	"fs2601/internal/telemetry"
 )
 
@@ -96,11 +97,12 @@ func (ta *TokenAuthority) IssueToken(accountID string, floorAmount int64, durati
 
 // EdgeAuthorizer validates tokens and grants offline authorizations on edge devices
 type EdgeAuthorizer struct {
-	mu           sync.Mutex
-	publicKey    ed25519.PublicKey
-	terminalID   string
-	spentByToken map[string]int64 // TokenID -> cumulative cents spent
-	sequenceNum  int64
+	mu               sync.Mutex
+	publicKey        ed25519.PublicKey
+	terminalID       string
+	spentByToken     map[string]int64 // TokenID -> cumulative cents spent
+	sequenceNum      int64
+	revocationFilter *fraud.CompactFilter // Feature 2: Cuckoo revocation filter
 }
 
 // NewEdgeAuthorizer initializes the edge verification agent
@@ -111,6 +113,13 @@ func NewEdgeAuthorizer(pubKey ed25519.PublicKey, terminalID string) *EdgeAuthori
 		spentByToken: make(map[string]int64),
 		sequenceNum:  0,
 	}
+}
+
+// SetRevocationFilter mounts a compact revocation filter for sub-microsecond edge blocking
+func (ea *EdgeAuthorizer) SetRevocationFilter(filter *fraud.CompactFilter) {
+	ea.mu.Lock()
+	defer ea.mu.Unlock()
+	ea.revocationFilter = filter
 }
 
 // OfflineAuthDecision captures the outcome of an offline authorization check
@@ -127,6 +136,18 @@ type OfflineAuthDecision struct {
 func (ea *EdgeAuthorizer) AuthorizeOffline(token *OfflineAuthorizationToken, amount int64) OfflineAuthDecision {
 	ea.mu.Lock()
 	defer ea.mu.Unlock()
+
+	// 0. Check Compact Revocation Filter (Feature 2: Sub-microsecond local edge revocation)
+	if ea.revocationFilter != nil {
+		if ea.revocationFilter.Contains(token.AccountID) || ea.revocationFilter.Contains(token.TokenID) {
+			return OfflineAuthDecision{
+				Approved:   false,
+				ReasonCode: telemetry.CodeRevokedAccountEdge,
+				ISO8583:    telemetry.MapReasonToISO8583(telemetry.CodeRevokedAccountEdge),
+				Message:    "Account or card token revoked at edge (Lost/Stolen Card).",
+			}
+		}
+	}
 
 	now := time.Now().Unix()
 

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
 	"sync"
@@ -34,7 +35,10 @@ type PaymentRequest struct {
 	IPAddress       string                          `json:"ip_address"`
 	ClientTimestamp int64                           `json:"client_timestamp"`
 	QRPayload       *fraud.QRPayload                `json:"qr_payload,omitempty"`
+	DynamicQR       *fraud.DynamicQRPayload         `json:"dynamic_qr,omitempty"`
 	OfflineToken    *edge.OfflineAuthorizationToken `json:"offline_token,omitempty"`
+	VectorClock     map[string]uint64               `json:"vector_clock,omitempty"`
+	SeqNo           uint64                          `json:"seq_no,omitempty"`
 }
 
 // PaymentGateway orchestrates API ingress, fraud screening, ledger reservation, and edge failover
@@ -44,6 +48,9 @@ type PaymentGateway struct {
 
 	idempotencyMu  sync.RWMutex
 	idempotency    map[string]telemetry.PaymentResponse
+
+	terminalKeysMu sync.RWMutex
+	terminalKeys   map[string]ed25519.PublicKey
 
 	ledger         *ledger.ConservingLedger
 	fraudEngine    *fraud.InMemGraphFraudEngine
@@ -66,6 +73,7 @@ func NewPaymentGateway(
 	return &PaymentGateway{
 		networkStatus:         NetworkOnline,
 		idempotency:           make(map[string]telemetry.PaymentResponse),
+		terminalKeys:          make(map[string]ed25519.PublicKey),
 		ledger:                led,
 		fraudEngine:           fra,
 		edgeAuthorizer:        edg,
@@ -96,6 +104,16 @@ func (gw *PaymentGateway) GetNetworkStatus() NetworkStatus {
 	return gw.networkStatus
 }
 
+// RegisterTerminalKey registers an Ed25519 public key for a POS terminal
+func (gw *PaymentGateway) RegisterTerminalKey(terminalID string, pubKey ed25519.PublicKey) {
+	gw.terminalKeysMu.Lock()
+	gw.terminalKeys[terminalID] = pubKey
+	gw.terminalKeysMu.Unlock()
+	if gw.fraudEngine != nil {
+		gw.fraudEngine.RegisterTerminalPubKey(terminalID, pubKey)
+	}
+}
+
 // ProcessPayment handles an incoming payment authorization request
 func (gw *PaymentGateway) ProcessPayment(req PaymentRequest) telemetry.PaymentResponse {
 	atomic.AddInt64(&gw.requestCounter, 1)
@@ -116,6 +134,53 @@ func (gw *PaymentGateway) ProcessPayment(req PaymentRequest) telemetry.PaymentRe
 		gw.idempotencyMu.RUnlock()
 		if exists {
 			return cached
+		}
+	}
+
+	// Dynamic QR Validation (Physical sticker replacement defense - Feature 3)
+	if req.DynamicQR != nil {
+		if req.DynamicQR.MerchantID != req.MerchantID {
+			resp := telemetry.NewDeclineResponse(
+				telemetry.CodeQRTampering,
+				fmt.Sprintf("Merchant ID mismatch in dynamic QR: expected %s, got %s", req.MerchantID, req.DynamicQR.MerchantID),
+				1.0,
+			)
+			if req.IdempotencyKey != "" {
+				gw.idempotencyMu.Lock()
+				gw.idempotency[req.IdempotencyKey] = resp
+				gw.idempotencyMu.Unlock()
+			}
+			return resp
+		}
+		gw.terminalKeysMu.RLock()
+		pubKey, ok := gw.terminalKeys[req.DynamicQR.TerminalID]
+		gw.terminalKeysMu.RUnlock()
+		if !ok {
+			resp := telemetry.NewDeclineResponse(
+				telemetry.CodeQRTampering,
+				fmt.Sprintf("Terminal %s is not registered with an Ed25519 public key", req.DynamicQR.TerminalID),
+				1.0,
+			)
+			if req.IdempotencyKey != "" {
+				gw.idempotencyMu.Lock()
+				gw.idempotency[req.IdempotencyKey] = resp
+				gw.idempotencyMu.Unlock()
+			}
+			return resp
+		}
+		valid, reason := fraud.VerifyDynamicQR(*req.DynamicQR, pubKey)
+		if !valid {
+			resp := telemetry.NewDeclineResponse(
+				telemetry.CodeQRTampering,
+				fmt.Sprintf("Dynamic QR verification failed: %s", reason),
+				1.0,
+			)
+			if req.IdempotencyKey != "" {
+				gw.idempotencyMu.Lock()
+				gw.idempotency[req.IdempotencyKey] = resp
+				gw.idempotencyMu.Unlock()
+			}
+			return resp
 		}
 	}
 
@@ -174,6 +239,8 @@ func (gw *PaymentGateway) handleOfflinePayment(req PaymentRequest) telemetry.Pay
 		Amount:          req.Amount,
 		Signature:       req.OfflineToken.Signature,
 		Status:          "PENDING",
+		SeqNo:           req.SeqNo,
+		VectorClock:     req.VectorClock,
 	}
 	queuedTx.PayloadHash = queuedTx.ComputeHash()
 

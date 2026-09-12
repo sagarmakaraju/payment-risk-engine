@@ -38,12 +38,14 @@ type LedgerEntry struct {
 	Description string    `json:"description"`
 }
 
-// Account represents a financial entity maintaining conserved balances
+// Account represents a financial entity maintaining dual-bucket conserved balances
 type Account struct {
 	mu               sync.RWMutex
 	ID               string    `json:"id"`
-	AvailableBalance int64     `json:"available_balance"` // in cents
-	ReservedBalance  int64     `json:"reserved_balance"`  // in cents
+	AvailableBalance int64     `json:"available_balance"` // Deprecated alias / synced with OnlineAvailable
+	OnlineAvailable  int64     `json:"online_available"`  // in cents
+	OfflineAllowance int64     `json:"offline_allowance"` // in cents (Feature 1: pre-allocated offline quota)
+	ReservedBalance  int64     `json:"reserved_balance"`  // in cents (in-flight online holds)
 	Version          int64     `json:"version"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -52,6 +54,8 @@ type Account struct {
 type AccountSnapshot struct {
 	ID               string    `json:"id"`
 	AvailableBalance int64     `json:"available_balance"`
+	OnlineAvailable  int64     `json:"online_available"`
+	OfflineAllowance int64     `json:"offline_allowance"`
 	ReservedBalance  int64     `json:"reserved_balance"`
 	TotalBalance     int64     `json:"total_balance"`
 	Version          int64     `json:"version"`
@@ -79,23 +83,32 @@ type ConservingLedger struct {
 	entryCounter int64
 
 	// System accounts
-	EscrowAccountID   string
-	ClearingAccountID string
+	EscrowAccountID         string
+	ClearingAccountID       string
+	DeficitReserveAccountID string // Feature 5: ACC_MERCHANT_DEFICIT_RESERVE
+	AccountDeficitReserve   string // Feature 5 alias
 }
+
+const (
+	AccountDeficitReserve = "ACC_MERCHANT_DEFICIT_RESERVE"
+)
 
 // NewConservingLedger initializes the ledger with designated system accounts
 func NewConservingLedger() *ConservingLedger {
 	l := &ConservingLedger{
-		accounts:          make(map[string]*Account),
-		reservations:      make(map[string]*Reservation),
-		entries:           make([]LedgerEntry, 0, 10000),
-		EscrowAccountID:   "SYSTEM_ESCROW",
-		ClearingAccountID: "SYSTEM_CLEARING",
+		accounts:                make(map[string]*Account),
+		reservations:            make(map[string]*Reservation),
+		entries:                 make([]LedgerEntry, 0, 10000),
+		EscrowAccountID:         "SYSTEM_ESCROW",
+		ClearingAccountID:       "SYSTEM_CLEARING",
+		DeficitReserveAccountID: AccountDeficitReserve,
+		AccountDeficitReserve:   AccountDeficitReserve,
 	}
 
 	// Create system accounts
 	l.CreateAccount(l.EscrowAccountID, 0)
 	l.CreateAccount(l.ClearingAccountID, 0)
+	l.CreateAccount(l.DeficitReserveAccountID, 0)
 	return l
 }
 
@@ -111,6 +124,8 @@ func (l *ConservingLedger) CreateAccount(id string, initialBalance int64) *Accou
 	acc := &Account{
 		ID:               id,
 		AvailableBalance: initialBalance,
+		OnlineAvailable:  initialBalance,
+		OfflineAllowance: 0,
 		ReservedBalance:  0,
 		Version:          1,
 		UpdatedAt:        time.Now().UTC(),
@@ -134,16 +149,192 @@ func (l *ConservingLedger) GetAccount(id string) (AccountSnapshot, error) {
 
 	return AccountSnapshot{
 		ID:               acc.ID,
-		AvailableBalance: acc.AvailableBalance,
+		AvailableBalance: acc.OnlineAvailable,
+		OnlineAvailable:  acc.OnlineAvailable,
+		OfflineAllowance: acc.OfflineAllowance,
 		ReservedBalance:  acc.ReservedBalance,
-		TotalBalance:     acc.AvailableBalance + acc.ReservedBalance,
+		TotalBalance:     acc.OnlineAvailable + acc.OfflineAllowance + acc.ReservedBalance,
 		Version:          acc.Version,
 		UpdatedAt:        acc.UpdatedAt,
 	}, nil
 }
 
+// GetAccountSnapshot returns a point-in-time snapshot of the account, or an empty snapshot if not found
+func (l *ConservingLedger) GetAccountSnapshot(id string) AccountSnapshot {
+	snap, _ := l.GetAccount(id)
+	return snap
+}
+
+// CheckGlobalInvariant validates double-entry conservation across all accounts
+func (l *ConservingLedger) CheckGlobalInvariant() error {
+	l.accountsLock.RLock()
+	defer l.accountsLock.RUnlock()
+
+	l.entriesLock.RLock()
+	defer l.entriesLock.RUnlock()
+
+	var sumDebits, sumCredits int64
+	for _, entry := range l.entries {
+		sumDebits += entry.Amount
+		sumCredits += entry.Amount
+	}
+	if sumDebits != sumCredits {
+		return fmt.Errorf("debit sum (%d) does not match credit sum (%d)", sumDebits, sumCredits)
+	}
+	return nil
+}
+
+// AllocateOfflineAllowance (Feature 1) atomically shifts funds from OnlineAvailable to OfflineAllowance
+func (l *ConservingLedger) AllocateOfflineAllowance(accountID string, amount int64) error {
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+
+	l.accountsLock.RLock()
+	acc, exists := l.accounts[accountID]
+	l.accountsLock.RUnlock()
+
+	if !exists {
+		return ErrAccountNotFound
+	}
+
+	acc.mu.Lock()
+	defer acc.mu.Unlock()
+
+	if acc.OnlineAvailable < amount {
+		return ErrInsufficientFunds
+	}
+
+	acc.OnlineAvailable -= amount
+	acc.AvailableBalance = acc.OnlineAvailable
+	acc.OfflineAllowance += amount
+	acc.Version++
+	acc.UpdatedAt = time.Now().UTC()
+
+	l.appendEntry(LedgerEntry{
+		TxID:        fmt.Sprintf("ALLOC-%s-%d", accountID, time.Now().UnixNano()),
+		Type:        EntryReserve,
+		DebitAcc:    accountID + "_ONLINE",
+		CreditAcc:   accountID + "_OFFLINE",
+		Amount:      amount,
+		Timestamp:   time.Now().UTC(),
+		Description: fmt.Sprintf("Pre-reserved %d cents to OfflineAllowance", amount),
+	})
+
+	return nil
+}
+
+// CommitOfflineAllowance (Feature 1) commits funds directly from the OfflineAllowance bucket
+func (l *ConservingLedger) CommitOfflineAllowance(accountID, destAccountID string, amount int64, txID string) error {
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+
+	l.accountsLock.RLock()
+	acc, exists := l.accounts[accountID]
+	destAcc, destExists := l.accounts[destAccountID]
+	l.accountsLock.RUnlock()
+
+	if !exists {
+		return ErrAccountNotFound
+	}
+	if !destExists {
+		destAcc = l.CreateAccount(destAccountID, 0)
+	}
+
+	if acc.ID < destAcc.ID {
+		acc.mu.Lock()
+		destAcc.mu.Lock()
+	} else if acc.ID > destAcc.ID {
+		destAcc.mu.Lock()
+		acc.mu.Lock()
+	} else {
+		acc.mu.Lock()
+	}
+
+	defer func() {
+		acc.mu.Unlock()
+		if acc.ID != destAcc.ID {
+			destAcc.mu.Unlock()
+		}
+	}()
+
+	if acc.OfflineAllowance < amount {
+		return ErrInsufficientFunds
+	}
+
+	acc.OfflineAllowance -= amount
+	acc.Version++
+	acc.UpdatedAt = time.Now().UTC()
+
+	destAcc.OnlineAvailable += amount
+	destAcc.AvailableBalance = destAcc.OnlineAvailable
+	destAcc.Version++
+	destAcc.UpdatedAt = time.Now().UTC()
+
+	l.appendEntry(LedgerEntry{
+		TxID:        txID,
+		Type:        EntryCommit,
+		DebitAcc:    accountID + "_OFFLINE",
+		CreditAcc:   destAccountID,
+		Amount:      amount,
+		Timestamp:   time.Now().UTC(),
+		Description: fmt.Sprintf("Settled %d cents from OfflineAllowance to %s", amount, destAccountID),
+	})
+
+	return nil
+}
+
+// DebitDeficitReserve (Feature 5) absorbs unreserved offline shortfalls into ACC_MERCHANT_DEFICIT_RESERVE
+func (l *ConservingLedger) DebitDeficitReserve(merchantID string, amount int64, txID string) error {
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+
+	l.accountsLock.RLock()
+	reserveAcc, rExists := l.accounts[l.DeficitReserveAccountID]
+	destAcc, dExists := l.accounts[merchantID]
+	l.accountsLock.RUnlock()
+
+	if !rExists {
+		reserveAcc = l.CreateAccount(l.DeficitReserveAccountID, 0)
+	}
+	if !dExists {
+		destAcc = l.CreateAccount(merchantID, 0)
+	}
+
+	reserveAcc.mu.Lock()
+	destAcc.mu.Lock()
+	defer reserveAcc.mu.Unlock()
+	defer destAcc.mu.Unlock()
+
+	// Deficit reserve account absorbs the shortfall liability
+	reserveAcc.OnlineAvailable -= amount
+	reserveAcc.AvailableBalance = reserveAcc.OnlineAvailable
+	reserveAcc.Version++
+	reserveAcc.UpdatedAt = time.Now().UTC()
+
+	// Payee merchant receives 100% full credit settlement
+	destAcc.OnlineAvailable += amount
+	destAcc.AvailableBalance = destAcc.OnlineAvailable
+	destAcc.Version++
+	destAcc.UpdatedAt = time.Now().UTC()
+
+	l.appendEntry(LedgerEntry{
+		TxID:        txID,
+		Type:        EntryDeficit,
+		DebitAcc:    l.DeficitReserveAccountID,
+		CreditAcc:   merchantID,
+		Amount:      amount,
+		Timestamp:   time.Now().UTC(),
+		Description: fmt.Sprintf("Deficit liability of %d cents charged to reserve for tx %s", amount, txID),
+	})
+
+	return nil
+}
+
 // ReserveFunds atomically checks and reserves available balance
-// Enforces invariant: AvailableBalance >= amount. Never allows blind decrements.
+// Enforces invariant: OnlineAvailable >= amount. Never allows blind decrements.
 func (l *ConservingLedger) ReserveFunds(accountID string, amount int64, txID string) (string, error) {
 	if amount <= 0 {
 		return "", ErrInvalidAmount
@@ -160,13 +351,14 @@ func (l *ConservingLedger) ReserveFunds(accountID string, amount int64, txID str
 	acc.mu.Lock()
 	defer acc.mu.Unlock()
 
-	// Hard Gate: Financial correctness check
-	if acc.AvailableBalance < amount {
+	// Hard Gate: Financial correctness check on OnlineAvailable
+	if acc.OnlineAvailable < amount {
 		return "", ErrInsufficientFunds
 	}
 
-	// Atomically move from Available to Reserved
-	acc.AvailableBalance -= amount
+	// Atomically move from OnlineAvailable to Reserved
+	acc.OnlineAvailable -= amount
+	acc.AvailableBalance = acc.OnlineAvailable
 	acc.ReservedBalance += amount
 	acc.Version++
 	acc.UpdatedAt = time.Now().UTC()
@@ -240,7 +432,8 @@ func (l *ConservingLedger) CommitHold(accountID string, destAccountID string, am
 	acc.Version++
 	acc.UpdatedAt = time.Now().UTC()
 
-	destAcc.AvailableBalance += amount
+	destAcc.OnlineAvailable += amount
+	destAcc.AvailableBalance = destAcc.OnlineAvailable
 	destAcc.Version++
 	destAcc.UpdatedAt = time.Now().UTC()
 
@@ -293,15 +486,17 @@ func (l *ConservingLedger) DirectCommit(accountID string, destAccountID string, 
 		}
 	}()
 
-	if acc.AvailableBalance < amount {
+	if acc.OnlineAvailable < amount {
 		return ErrInsufficientFunds
 	}
 
-	acc.AvailableBalance -= amount
+	acc.OnlineAvailable -= amount
+	acc.AvailableBalance = acc.OnlineAvailable
 	acc.Version++
 	acc.UpdatedAt = time.Now().UTC()
 
-	destAcc.AvailableBalance += amount
+	destAcc.OnlineAvailable += amount
+	destAcc.AvailableBalance = destAcc.OnlineAvailable
 	destAcc.Version++
 	destAcc.UpdatedAt = time.Now().UTC()
 
@@ -336,7 +531,8 @@ func (l *ConservingLedger) ReleaseHold(accountID string, amount int64, txID stri
 	}
 
 	acc.ReservedBalance -= amount
-	acc.AvailableBalance += amount
+	acc.OnlineAvailable += amount
+	acc.AvailableBalance = acc.OnlineAvailable
 	acc.Version++
 	acc.UpdatedAt = time.Now().UTC()
 
@@ -373,11 +569,13 @@ func (l *ConservingLedger) RecordDeficit(accountID string, destAccountID string,
 	defer destAcc.mu.Unlock()
 
 	// Post to deficit: account balance becomes negative or liability is booked to clearing
-	acc.AvailableBalance -= amount
+	acc.OnlineAvailable -= amount
+	acc.AvailableBalance = acc.OnlineAvailable
 	acc.Version++
 	acc.UpdatedAt = time.Now().UTC()
 
-	destAcc.AvailableBalance += amount
+	destAcc.OnlineAvailable += amount
+	destAcc.AvailableBalance = destAcc.OnlineAvailable
 	destAcc.Version++
 	destAcc.UpdatedAt = time.Now().UTC()
 
@@ -408,7 +606,7 @@ func (l *ConservingLedger) AuditConservation() (totalAvailable int64, totalReser
 
 	for _, acc := range l.accounts {
 		acc.mu.RLock()
-		totalAvailable += acc.AvailableBalance
+		totalAvailable += acc.OnlineAvailable + acc.OfflineAllowance
 		totalReserved += acc.ReservedBalance
 		acc.mu.RUnlock()
 	}
