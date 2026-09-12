@@ -108,3 +108,35 @@ The server includes an embedded web dashboard:
    - **Dynamic QR Handshake Ticker**: Watch the 30-second epoch salt rotate with a real-time countdown progress bar.
    - **Deficit Reserve Monitor**: Inspect the $\$1,000,000.00$ `ACC_MERCHANT_DEFICIT_RESERVE` balance and observe non-negative customer balance enforcement.
    - **ISO-8583 Inspector**: View real-time ISO-8583 telemetry payloads (`00`, `41`, `51`, `57`, `59`, `61`, `63`, `94`, `96`).
+
+---
+
+## Option D: Terminal CLI Evaluation (`fs2601-cli`)
+
+For terminal-first evaluation, use the compiled `fs2601-cli`:
+
+```powershell
+# 1. Build CLI binary
+go build -o bin\fs2601-cli.exe ./cmd/cli
+
+# 2. Inspect node health and conservation invariant
+.\bin\fs2601-cli.exe health
+.\bin\fs2601-cli.exe audit
+
+# 3. Query account balances
+.\bin\fs2601-cli.exe balance ACC-BENCH-1
+
+# 4. Process payment
+.\bin\fs2601-cli.exe pay ACC-BENCH-1 MERCHANT-POS-01 25.00
+
+# 5. Inspect Cuckoo Filter statistics
+.\bin\fs2601-cli.exe cuckoo-stats
+
+# 6. Test dynamic QR generation
+.\bin\fs2601-cli.exe qr NONE
+.\bin\fs2601-cli.exe qr EXPIRED
+.\bin\fs2601-cli.exe qr STICKER_MISMATCH
+
+# 7. Query deficit reserve balance
+.\bin\fs2601-cli.exe reserve
+```
