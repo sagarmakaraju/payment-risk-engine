@@ -10,6 +10,7 @@ wal_edge_data.log
 tmp/
 temp_*.json
 coverage*
+*.zip
 
 # OS files
 .DS_Store
